@@ -81,6 +81,9 @@ public class Utils {
         update.setFileSize(object.getLong("size"));
         update.setDownloadUrl(object.getString("url"));
         update.setVersion(object.getString("version"));
+        if (object.has("system_size")) {
+            update.setSystemSize(object.getLong("system_size"));
+        }
         return update;
     }
 
@@ -419,6 +422,10 @@ public class Utils {
             case Constants.AUTO_UPDATES_CHECK_INTERVAL_MONTHLY:
                 return AlarmManager.INTERVAL_DAY * 30;
         }
+    }
+
+    public static boolean isGSIBuild() {
+        return "gsi".equals(SystemProperties.get(Constants.PROP_BASEDOS_BUILD_TYPE, "device"));
     }
 
     public static boolean isRecoveryUpdateExecPresent() {

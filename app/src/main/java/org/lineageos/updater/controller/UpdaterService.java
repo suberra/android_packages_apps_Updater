@@ -175,7 +175,9 @@ public class UpdaterService extends Service {
         Log.d(TAG, "Starting service");
 
         if (intent == null || intent.getAction() == null) {
-            if (ABUpdateInstaller.isInstallingUpdate(this)) {
+            if (GSIUpdateInstaller.isInstallingUpdate(this)) {
+                // GSI installation is in progress, nothing to reconnect.
+            } else if (ABUpdateInstaller.isInstallingUpdate(this)) {
                 // The service is being restarted.
                 ABUpdateInstaller installer = ABUpdateInstaller.getInstance(this,
                         mUpdaterController);
@@ -197,24 +199,34 @@ public class UpdaterService extends Service {
             if (update.getPersistentStatus() != UpdateStatus.Persistent.VERIFIED) {
                 throw new IllegalArgumentException(update.getDownloadId() + " is not verified");
             }
-            try {
-                if (Utils.isABUpdate(update.getFile())) {
-                    ABUpdateInstaller installer = ABUpdateInstaller.getInstance(this,
-                            mUpdaterController);
-                    installer.install(downloadId);
-                } else {
-                    UpdateInstaller installer = UpdateInstaller.getInstance(this,
-                            mUpdaterController);
-                    installer.install(downloadId);
+            if (Utils.isGSIBuild()) {
+                GSIUpdateInstaller installer = GSIUpdateInstaller.getInstance(this,
+                        mUpdaterController);
+                installer.install(downloadId);
+            } else {
+                try {
+                    if (Utils.isABUpdate(update.getFile())) {
+                        ABUpdateInstaller installer = ABUpdateInstaller.getInstance(this,
+                                mUpdaterController);
+                        installer.install(downloadId);
+                    } else {
+                        UpdateInstaller installer = UpdateInstaller.getInstance(this,
+                                mUpdaterController);
+                        installer.install(downloadId);
+                    }
+                } catch (IOException e) {
+                    Log.e(TAG, "Could not install update", e);
+                    mUpdaterController.getActualUpdate(downloadId)
+                            .setStatus(UpdateStatus.INSTALLATION_FAILED);
+                    mUpdaterController.notifyUpdateChange(downloadId);
                 }
-            } catch (IOException e) {
-                Log.e(TAG, "Could not install update", e);
-                mUpdaterController.getActualUpdate(downloadId)
-                        .setStatus(UpdateStatus.INSTALLATION_FAILED);
-                mUpdaterController.notifyUpdateChange(downloadId);
             }
         } else if (ACTION_INSTALL_STOP.equals(intent.getAction())) {
-            if (UpdateInstaller.isInstalling()) {
+            if (GSIUpdateInstaller.isInstallingUpdate(this)) {
+                GSIUpdateInstaller installer = GSIUpdateInstaller.getInstance(this,
+                        mUpdaterController);
+                installer.cancel();
+            } else if (UpdateInstaller.isInstalling()) {
                 UpdateInstaller installer = UpdateInstaller.getInstance(this,
                         mUpdaterController);
                 installer.cancel();
@@ -239,7 +251,8 @@ public class UpdaterService extends Service {
                 installer.resume();
             }
         }
-        return ABUpdateInstaller.isInstallingUpdate(this) ? START_STICKY : START_NOT_STICKY;
+        return (ABUpdateInstaller.isInstallingUpdate(this) ||
+                GSIUpdateInstaller.isInstallingUpdate(this)) ? START_STICKY : START_NOT_STICKY;
     }
 
     public UpdaterController getUpdaterController() {
@@ -378,9 +391,14 @@ public class UpdaterService extends Service {
                 mNotificationBuilder.setSmallIcon(R.drawable.ic_system_update);
                 mNotificationBuilder.setProgress(0, 0, false);
                 mNotificationStyle.setSummaryText(null);
-                String text = UpdateInstaller.isInstalling() ?
-                        getString(R.string.dialog_prepare_zip_message) :
-                        getString(R.string.installing_update);
+                String text;
+                if (GSIUpdateInstaller.isInstallingUpdate(this)) {
+                    text = getString(R.string.installing_gsi_update);
+                } else if (UpdateInstaller.isInstalling()) {
+                    text = getString(R.string.dialog_prepare_zip_message);
+                } else {
+                    text = getString(R.string.installing_update);
+                }
                 mNotificationStyle.bigText(text);
                 if (ABUpdateInstaller.isInstallingUpdate(this)) {
                     mNotificationBuilder.addAction(android.R.drawable.ic_media_pause,
@@ -486,11 +504,17 @@ public class UpdaterService extends Service {
         mNotificationBuilder.setProgress(100, progress, false);
         String percent = NumberFormat.getPercentInstance().format(progress / 100.f);
         mNotificationStyle.setSummaryText(percent);
-        boolean notAB = UpdateInstaller.isInstalling();
-        mNotificationStyle.bigText(notAB ? getString(R.string.dialog_prepare_zip_message) :
-                update.getFinalizing() ?
-                        getString(R.string.finalizing_package) :
-                        getString(R.string.preparing_ota_first_boot));
+        String progressText;
+        if (GSIUpdateInstaller.isInstallingUpdate(this)) {
+            progressText = getString(R.string.installing_gsi_update);
+        } else if (UpdateInstaller.isInstalling()) {
+            progressText = getString(R.string.dialog_prepare_zip_message);
+        } else {
+            progressText = update.getFinalizing() ?
+                    getString(R.string.finalizing_package) :
+                    getString(R.string.preparing_ota_first_boot);
+        }
+        mNotificationStyle.bigText(progressText);
         mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
     }
 

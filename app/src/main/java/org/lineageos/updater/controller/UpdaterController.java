@@ -274,6 +274,13 @@ public class UpdaterController {
     }
 
     private boolean verifyPackage(File file) {
+        if (Utils.isGSIBuild()) {
+            // GSI updates are raw .img.gz files, not signed OTA ZIPs.
+            // RecoverySystem.verifyPackage() would always fail.
+            // Integrity is verified by SHA256 hash during download.
+            Log.d(TAG, "GSI build: skipping RecoverySystem verification (SHA256 verified)");
+            return true;
+        }
         try {
             android.os.RecoverySystem.verifyPackage(file, null, null);
             Log.e(TAG, "Verification successful");
@@ -531,12 +538,18 @@ public class UpdaterController {
 
     public boolean isInstallingUpdate() {
         return UpdateInstaller.isInstalling() ||
-                ABUpdateInstaller.isInstallingUpdate(mContext);
+                ABUpdateInstaller.isInstallingUpdate(mContext) ||
+                GSIUpdateInstaller.isInstallingUpdate(mContext);
     }
 
     public boolean isInstallingUpdate(String downloadId) {
         return UpdateInstaller.isInstalling(downloadId) ||
-                ABUpdateInstaller.isInstallingUpdate(mContext, downloadId);
+                ABUpdateInstaller.isInstallingUpdate(mContext, downloadId) ||
+                GSIUpdateInstaller.isInstallingUpdate(mContext, downloadId);
+    }
+
+    public boolean isInstallingGSIUpdate() {
+        return GSIUpdateInstaller.isInstallingUpdate(mContext);
     }
 
     public boolean isInstallingABUpdate() {

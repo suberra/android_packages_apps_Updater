@@ -179,11 +179,15 @@ public class UpdatesListAdapter extends RecyclerView.Adapter<UpdatesListAdapter.
             viewHolder.mProgressBar.setProgress(update.getProgress());
         } else if (mUpdaterController.isInstallingUpdate(downloadId)) {
             setButtonAction(viewHolder.mAction, Action.CANCEL_INSTALLATION, downloadId, true);
-            boolean notAB = !mUpdaterController.isInstallingABUpdate();
-            viewHolder.mProgressText.setText(notAB ? R.string.dialog_prepare_zip_message :
-                    update.getFinalizing() ?
-                            R.string.finalizing_package :
-                            R.string.preparing_ota_first_boot);
+            if (mUpdaterController.isInstallingGSIUpdate()) {
+                viewHolder.mProgressText.setText(R.string.installing_gsi_update);
+            } else if (!mUpdaterController.isInstallingABUpdate()) {
+                viewHolder.mProgressText.setText(R.string.dialog_prepare_zip_message);
+            } else {
+                viewHolder.mProgressText.setText(update.getFinalizing() ?
+                        R.string.finalizing_package :
+                        R.string.preparing_ota_first_boot);
+            }
             String percentage = NumberFormat.getPercentInstance().format(
                     update.getInstallProgress() / 100.f);
             viewHolder.mPercentage.setText(percentage);
@@ -481,18 +485,22 @@ public class UpdatesListAdapter extends RecyclerView.Adapter<UpdatesListAdapter.
         }
         UpdateInfo update = mUpdaterController.getUpdate(downloadId);
         int resId;
-        try {
-            if (Utils.isABUpdate(update.getFile())) {
-                resId = R.string.apply_update_dialog_message_ab;
-            } else {
-                resId = R.string.apply_update_dialog_message;
+        if (Utils.isGSIBuild()) {
+            resId = R.string.apply_update_dialog_message_gsi;
+        } else {
+            try {
+                if (Utils.isABUpdate(update.getFile())) {
+                    resId = R.string.apply_update_dialog_message_ab;
+                } else {
+                    resId = R.string.apply_update_dialog_message;
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "Could not determine the type of the update", e);
+                return new AlertDialog.Builder(mActivity)
+                        .setTitle(R.string.dialog_update_file_error_title)
+                        .setMessage(R.string.dialog_update_file_error_message)
+                        .setPositiveButton(android.R.string.ok, null);
             }
-        } catch (IOException e) {
-            Log.e(TAG, "Could not determine the type of the update", e);
-            return new AlertDialog.Builder(mActivity)
-                    .setTitle(R.string.dialog_update_file_error_title)
-                    .setMessage(R.string.dialog_update_file_error_message)
-                    .setPositiveButton(android.R.string.ok, null);
         }
 
         String buildDate = StringGenerator.getDateLocalizedUTC(mActivity,
