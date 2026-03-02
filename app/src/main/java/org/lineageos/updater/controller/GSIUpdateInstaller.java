@@ -45,8 +45,7 @@ class GSIUpdateInstaller {
 
     private static final int SHARED_MEM_SIZE = 524288; // 512 KiB
     private static final int MAX_REPORT_INTERVAL_MS = 1000;
-    private static final String DSU_SLOT_A = "basedos";
-    private static final String DSU_SLOT_B = "basedos_next";
+    private static final String DSU_PARTITION_NAME = "basedos";
 
     private static GSIUpdateInstaller sInstance = null;
 
@@ -79,6 +78,21 @@ class GSIUpdateInstaller {
         return downloadId.equals(pref.getString(Constants.PREF_INSTALLING_GSI_ID, null));
     }
 
+    /**
+     * Check if there is a pending GSI install that was deferred because the device
+     * was running from DSU. After rebooting to stock, the install can proceed.
+     */
+    static String getPendingGSIReboot(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getString(Constants.PREF_PENDING_GSI_REBOOT, null);
+    }
+
+    static void clearPendingGSIReboot(Context context) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .remove(Constants.PREF_PENDING_GSI_REBOOT)
+                .apply();
+    }
+
     void install(String downloadId) {
         if (isInstallingUpdate(mContext)) {
             Log.e(TAG, "Already installing a GSI update");
@@ -99,6 +113,39 @@ class GSIUpdateInstaller {
             Log.e(TAG, "Update file not found");
             update.setStatus(UpdateStatus.INSTALLATION_FAILED);
             mUpdaterController.notifyUpdateChange(mDownloadId);
+            return;
+        }
+
+        // Check if device is currently running from DSU.
+        DynamicSystemManager dsm = mContext.getSystemService(DynamicSystemManager.class);
+        if (dsm != null && dsm.isInUse()) {
+            // Cannot install a new DSU while booted from one (Android platform limitation).
+            // Disable the current DSU and prompt for reboot. After rebooting to the
+            // original system partition, the install will be auto-triggered.
+            Log.d(TAG, "Running from DSU, disabling for reboot-to-stock");
+            try {
+                dsm.setEnable(false, false);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to disable DSU", e);
+                update.setStatus(UpdateStatus.INSTALLATION_FAILED);
+                mUpdaterController.notifyUpdateChange(mDownloadId);
+                return;
+            }
+
+            // Save the download ID so UpdaterService auto-triggers install after reboot.
+            PreferenceManager.getDefaultSharedPreferences(mContext).edit()
+                    .putString(Constants.PREF_PENDING_GSI_REBOOT, mDownloadId)
+                    .apply();
+
+            // Show "needs reboot" state — the UI will show the reboot button.
+            PreferenceManager.getDefaultSharedPreferences(mContext).edit()
+                    .putString(Constants.PREF_NEEDS_REBOOT_ID, mDownloadId)
+                    .apply();
+
+            update.setStatus(UpdateStatus.INSTALLED);
+            mUpdaterController.notifyUpdateChange(mDownloadId);
+
+            Log.d(TAG, "DSU disabled, reboot required to apply update");
             return;
         }
 
@@ -135,27 +182,10 @@ class GSIUpdateInstaller {
         ByteBuffer buffer = null;
 
         try {
-            boolean runningFromDSU = dsm.isInUse();
-            String installSlot;
-
-            if (runningFromDSU) {
-                // Device is booted from a DSU slot. Cannot remove/replace the active
-                // partition. Install to the alternate slot instead. gsid will clean up
-                // any orphaned files in the target slot automatically.
-                String activeSlot = dsm.getActiveDsuSlot();
-                if (activeSlot == null || activeSlot.isEmpty()) {
-                    activeSlot = DSU_SLOT_A;
-                }
-                installSlot = activeSlot.equals(DSU_SLOT_A) ? DSU_SLOT_B : DSU_SLOT_A;
-                Log.d(TAG, "Running from DSU slot '" + activeSlot
-                        + "', installing to alternate slot '" + installSlot + "'");
-            } else {
-                installSlot = DSU_SLOT_A;
-                // Safe to remove existing DSU when not booted from it.
-                if (dsm.isInstalled()) {
-                    Log.d(TAG, "Removing existing DSU installation");
-                    dsm.remove();
-                }
+            // Clean up any existing DSU installation.
+            if (dsm.isInstalled()) {
+                Log.d(TAG, "Removing existing DSU installation");
+                dsm.remove();
             }
 
             // Check available space (system image + ~512MB overhead).
@@ -173,10 +203,10 @@ class GSIUpdateInstaller {
                 return;
             }
 
-            // Start DSU installation to the selected slot.
-            Log.d(TAG, "Starting DSU installation, slot: " + installSlot);
-            if (!dsm.startInstallation(installSlot)) {
-                Log.e(TAG, "Failed to start DSU installation for slot: " + installSlot);
+            // Start DSU installation.
+            Log.d(TAG, "Starting DSU installation, partition: " + DSU_PARTITION_NAME);
+            if (!dsm.startInstallation(DSU_PARTITION_NAME)) {
+                Log.e(TAG, "Failed to start DSU installation");
                 failInstallation("Failed to start DSU installation");
                 return;
             }

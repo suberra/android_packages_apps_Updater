@@ -486,7 +486,13 @@ public class UpdatesListAdapter extends RecyclerView.Adapter<UpdatesListAdapter.
         UpdateInfo update = mUpdaterController.getUpdate(downloadId);
         int resId;
         if (Utils.isGSIBuild()) {
-            resId = R.string.apply_update_dialog_message_gsi;
+            android.os.image.DynamicSystemManager dsm =
+                    mActivity.getSystemService(android.os.image.DynamicSystemManager.class);
+            if (dsm != null && dsm.isInUse()) {
+                resId = R.string.apply_update_dialog_message_gsi_reboot;
+            } else {
+                resId = R.string.apply_update_dialog_message_gsi;
+            }
         } else {
             try {
                 if (Utils.isABUpdate(update.getFile())) {
