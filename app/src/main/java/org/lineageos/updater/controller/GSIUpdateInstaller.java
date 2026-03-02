@@ -45,7 +45,8 @@ class GSIUpdateInstaller {
 
     private static final int SHARED_MEM_SIZE = 524288; // 512 KiB
     private static final int MAX_REPORT_INTERVAL_MS = 1000;
-    private static final String DSU_PARTITION_NAME = "basedos";
+    private static final String DSU_SLOT_A = "basedos";
+    private static final String DSU_SLOT_B = "basedos_next";
 
     private static GSIUpdateInstaller sInstance = null;
 
@@ -134,10 +135,27 @@ class GSIUpdateInstaller {
         ByteBuffer buffer = null;
 
         try {
-            // Clean up any existing DSU installation (installed or actively running).
-            if (dsm.isInstalled()) {
-                Log.d(TAG, "Removing existing DSU installation");
-                dsm.remove();
+            boolean runningFromDSU = dsm.isInUse();
+            String installSlot;
+
+            if (runningFromDSU) {
+                // Device is booted from a DSU slot. Cannot remove/replace the active
+                // partition. Install to the alternate slot instead. gsid will clean up
+                // any orphaned files in the target slot automatically.
+                String activeSlot = dsm.getActiveDsuSlot();
+                if (activeSlot == null || activeSlot.isEmpty()) {
+                    activeSlot = DSU_SLOT_A;
+                }
+                installSlot = activeSlot.equals(DSU_SLOT_A) ? DSU_SLOT_B : DSU_SLOT_A;
+                Log.d(TAG, "Running from DSU slot '" + activeSlot
+                        + "', installing to alternate slot '" + installSlot + "'");
+            } else {
+                installSlot = DSU_SLOT_A;
+                // Safe to remove existing DSU when not booted from it.
+                if (dsm.isInstalled()) {
+                    Log.d(TAG, "Removing existing DSU installation");
+                    dsm.remove();
+                }
             }
 
             // Check available space (system image + ~512MB overhead).
@@ -155,10 +173,10 @@ class GSIUpdateInstaller {
                 return;
             }
 
-            // Start DSU installation.
-            Log.d(TAG, "Starting DSU installation, partition: " + DSU_PARTITION_NAME);
-            if (!dsm.startInstallation(DSU_PARTITION_NAME)) {
-                Log.e(TAG, "Failed to start DSU installation");
+            // Start DSU installation to the selected slot.
+            Log.d(TAG, "Starting DSU installation, slot: " + installSlot);
+            if (!dsm.startInstallation(installSlot)) {
+                Log.e(TAG, "Failed to start DSU installation for slot: " + installSlot);
                 failInstallation("Failed to start DSU installation");
                 return;
             }
