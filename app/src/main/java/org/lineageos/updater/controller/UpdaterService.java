@@ -185,15 +185,19 @@ public class UpdaterService extends Service {
             }
             // Check for pending GSI install deferred from a previous DSU-booted session.
             // After rebooting to stock, we can now install the update via DSU.
-            String pendingId = GSIUpdateInstaller.getPendingGSIReboot(this);
+            // Defer to a Handler to avoid NPE from broadcast receivers that
+            // haven't bound to the service yet during early startup.
+            final String pendingId = GSIUpdateInstaller.getPendingGSIReboot(this);
             if (pendingId != null && Utils.isGSIBuild()
                     && !android.os.SystemProperties.getBoolean(
                             "ro.gsid.image_running", false)) {
-                Log.d(TAG, "Resuming deferred GSI install: " + pendingId);
                 GSIUpdateInstaller.clearPendingGSIReboot(this);
-                GSIUpdateInstaller installer = GSIUpdateInstaller.getInstance(this,
-                        mUpdaterController);
-                installer.install(pendingId);
+                new android.os.Handler(getMainLooper()).postDelayed(() -> {
+                    Log.d(TAG, "Resuming deferred GSI install: " + pendingId);
+                    GSIUpdateInstaller installer = GSIUpdateInstaller.getInstance(
+                            UpdaterService.this, mUpdaterController);
+                    installer.install(pendingId);
+                }, 5000);
             }
         } else if (ACTION_DOWNLOAD_CONTROL.equals(intent.getAction())) {
             String downloadId = intent.getStringExtra(EXTRA_DOWNLOAD_ID);
