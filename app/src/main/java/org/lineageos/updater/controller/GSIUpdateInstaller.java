@@ -73,6 +73,23 @@ class GSIUpdateInstaller {
         return pref.getString(Constants.PREF_INSTALLING_GSI_ID, null) != null;
     }
 
+    /**
+     * Clear stale install state left by a crashed or killed service.
+     * If the preference says we're installing but the install thread is dead,
+     * clear the preference so new installs aren't permanently blocked.
+     */
+    static synchronized void cleanupStaleState(Context context) {
+        SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+        String installingId = pref.getString(Constants.PREF_INSTALLING_GSI_ID, null);
+        if (installingId == null) return;
+
+        if (sInstance == null || sInstance.mInstallThread == null
+                || !sInstance.mInstallThread.isAlive()) {
+            Log.w(TAG, "Clearing stale GSI install state for: " + installingId);
+            pref.edit().remove(Constants.PREF_INSTALLING_GSI_ID).apply();
+        }
+    }
+
     static synchronized boolean isInstallingUpdate(Context context, String downloadId) {
         SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
         return downloadId.equals(pref.getString(Constants.PREF_INSTALLING_GSI_ID, null));

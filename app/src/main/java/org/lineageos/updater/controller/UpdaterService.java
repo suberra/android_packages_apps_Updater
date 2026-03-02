@@ -175,6 +175,10 @@ public class UpdaterService extends Service {
         Log.d(TAG, "Starting service");
 
         if (intent == null || intent.getAction() == null) {
+            // Clean up stale GSI install state left by a crashed/killed service.
+            // Must run before the isInstallingUpdate check below.
+            GSIUpdateInstaller.cleanupStaleState(this);
+
             if (GSIUpdateInstaller.isInstallingUpdate(this)) {
                 // GSI installation is in progress, nothing to reconnect.
             } else if (ABUpdateInstaller.isInstallingUpdate(this)) {
@@ -191,8 +195,10 @@ public class UpdaterService extends Service {
             if (pendingId != null && Utils.isGSIBuild()
                     && !android.os.SystemProperties.getBoolean(
                             "ro.gsid.image_running", false)) {
-                GSIUpdateInstaller.clearPendingGSIReboot(this);
+                // Clear the pending flag inside the Handler so it persists if the
+                // service is killed before the deferred install fires.
                 new android.os.Handler(getMainLooper()).postDelayed(() -> {
+                    GSIUpdateInstaller.clearPendingGSIReboot(UpdaterService.this);
                     Log.d(TAG, "Resuming deferred GSI install: " + pendingId);
                     GSIUpdateInstaller installer = GSIUpdateInstaller.getInstance(
                             UpdaterService.this, mUpdaterController);
