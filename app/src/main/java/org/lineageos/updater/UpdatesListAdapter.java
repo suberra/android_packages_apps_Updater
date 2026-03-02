@@ -389,13 +389,13 @@ public class UpdatesListAdapter extends RecyclerView.Adapter<UpdatesListAdapter.
                 final boolean canInstall = Utils.canInstall(update);
                 clickListener = enabled ? view -> {
                     if (canInstall) {
-                        AlertDialog.Builder installDialog = getInstallDialog(downloadId);
-                        if (installDialog != null) {
-                            installDialog.show();
-                        }
+                        getInstallDialog(downloadId).show();
                     } else {
-                        mActivity.showSnackbar(R.string.snack_update_not_installable,
-                                Snackbar.LENGTH_LONG);
+                        new AlertDialog.Builder(mActivity)
+                                .setTitle(R.string.dialog_update_not_installable_title)
+                                .setMessage(R.string.dialog_update_not_installable_message)
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show();
                     }
                 } : null;
             }
@@ -488,8 +488,11 @@ public class UpdatesListAdapter extends RecyclerView.Adapter<UpdatesListAdapter.
                 resId = R.string.apply_update_dialog_message;
             }
         } catch (IOException e) {
-            Log.e(TAG, "Could not determine the type of the update");
-            return null;
+            Log.e(TAG, "Could not determine the type of the update", e);
+            return new AlertDialog.Builder(mActivity)
+                    .setTitle(R.string.dialog_update_file_error_title)
+                    .setMessage(R.string.dialog_update_file_error_message)
+                    .setPositiveButton(android.R.string.ok, null);
         }
 
         String buildDate = StringGenerator.getDateLocalizedUTC(mActivity,
