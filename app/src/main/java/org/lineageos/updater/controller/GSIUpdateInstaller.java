@@ -18,6 +18,7 @@ package org.lineageos.updater.controller;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.gsi.IGsiService;
+import android.os.PowerManager;
 import android.os.SharedMemory;
 import android.os.SystemClock;
 import android.os.image.DynamicSystemManager;
@@ -150,19 +151,18 @@ class GSIUpdateInstaller {
             }
 
             // Save the download ID so UpdaterService auto-triggers install after reboot.
+            // Also set auto-reboot flag so the second reboot is automatic too.
             PreferenceManager.getDefaultSharedPreferences(mContext).edit()
                     .putString(Constants.PREF_PENDING_GSI_REBOOT, mDownloadId)
+                    .putBoolean(Constants.PREF_GSI_AUTO_REBOOT_ON_COMPLETE, true)
                     .apply();
 
-            // Show "needs reboot" state — the UI will show the reboot button.
-            PreferenceManager.getDefaultSharedPreferences(mContext).edit()
-                    .putString(Constants.PREF_NEEDS_REBOOT_ID, mDownloadId)
-                    .apply();
+            Log.d(TAG, "DSU disabled, auto-rebooting to stock for install");
 
-            update.setStatus(UpdateStatus.INSTALLED);
-            mUpdaterController.notifyUpdateChange(mDownloadId);
-
-            Log.d(TAG, "DSU disabled, reboot required to apply update");
+            // The user already consented to the two-reboot process in the
+            // confirmation dialog. Reboot immediately — no manual action needed.
+            PowerManager pm = mContext.getSystemService(PowerManager.class);
+            pm.reboot(null);
             return;
         }
 
@@ -323,17 +323,34 @@ class GSIUpdateInstaller {
 
             Log.d(TAG, "GSI update installed successfully via DSU");
 
-            // Mark success.
-            PreferenceManager.getDefaultSharedPreferences(mContext).edit()
-                    .putString(Constants.PREF_NEEDS_REBOOT_ID, mDownloadId)
-                    .remove(Constants.PREF_INSTALLING_GSI_ID)
-                    .apply();
+            SharedPreferences prefs =
+                    PreferenceManager.getDefaultSharedPreferences(mContext);
+            boolean autoReboot = prefs.getBoolean(
+                    Constants.PREF_GSI_AUTO_REBOOT_ON_COMPLETE, false);
 
-            Update update = mUpdaterController.getActualUpdate(mDownloadId);
-            if (update != null) {
-                update.setInstallProgress(100);
-                update.setStatus(UpdateStatus.INSTALLED);
-                mUpdaterController.notifyUpdateChange(mDownloadId);
+            if (autoReboot) {
+                // Two-phase flow: user already consented to both reboots.
+                // Clean up and reboot directly into the new DSU image.
+                prefs.edit()
+                        .remove(Constants.PREF_INSTALLING_GSI_ID)
+                        .remove(Constants.PREF_GSI_AUTO_REBOOT_ON_COMPLETE)
+                        .apply();
+                Log.d(TAG, "Auto-rebooting into new DSU image");
+                PowerManager pm = mContext.getSystemService(PowerManager.class);
+                pm.reboot(null);
+            } else {
+                // Normal (first-time) install: show reboot button.
+                prefs.edit()
+                        .putString(Constants.PREF_NEEDS_REBOOT_ID, mDownloadId)
+                        .remove(Constants.PREF_INSTALLING_GSI_ID)
+                        .apply();
+
+                Update update = mUpdaterController.getActualUpdate(mDownloadId);
+                if (update != null) {
+                    update.setInstallProgress(100);
+                    update.setStatus(UpdateStatus.INSTALLED);
+                    mUpdaterController.notifyUpdateChange(mDownloadId);
+                }
             }
 
         } catch (IOException e) {
@@ -364,6 +381,7 @@ class GSIUpdateInstaller {
         Log.e(TAG, "Installation failed: " + reason);
         PreferenceManager.getDefaultSharedPreferences(mContext).edit()
                 .remove(Constants.PREF_INSTALLING_GSI_ID)
+                .remove(Constants.PREF_GSI_AUTO_REBOOT_ON_COMPLETE)
                 .apply();
 
         Update update = mUpdaterController.getActualUpdate(mDownloadId);
@@ -378,6 +396,7 @@ class GSIUpdateInstaller {
         Log.d(TAG, "GSI installation cancelled");
         PreferenceManager.getDefaultSharedPreferences(mContext).edit()
                 .remove(Constants.PREF_INSTALLING_GSI_ID)
+                .remove(Constants.PREF_GSI_AUTO_REBOOT_ON_COMPLETE)
                 .apply();
 
         Update update = mUpdaterController.getActualUpdate(mDownloadId);
