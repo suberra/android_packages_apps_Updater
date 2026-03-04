@@ -187,45 +187,6 @@ public class UpdaterService extends Service {
                         mUpdaterController);
                 installer.reconnect();
             }
-            // Check for pending GSI install deferred from a previous DSU-booted session.
-            // After rebooting to stock, we can now install the update via DSU.
-            // Defer the actual install to a Handler to avoid NPE from broadcast
-            // receivers that haven't bound to the service yet during early startup.
-            final String pendingId = GSIUpdateInstaller.getPendingGSIReboot(this);
-            if (pendingId != null && Utils.isGSIBuild()
-                    && !android.os.SystemProperties.getBoolean(
-                            "ro.gsid.image_running", false)) {
-                // Immediately mark as installing so the UI shows the install
-                // progress state instead of a confusing "Install" button during
-                // the delay. This also prevents the user from double-triggering.
-                Update update = mUpdaterController.getActualUpdate(pendingId);
-                if (update == null) {
-                    Log.w(TAG, "Pending GSI install but update not in DB: " + pendingId);
-                    GSIUpdateInstaller.clearPendingGSIReboot(this);
-                } else {
-                    SharedPreferences pref =
-                            PreferenceManager.getDefaultSharedPreferences(this);
-                    pref.edit().putString(Constants.PREF_INSTALLING_GSI_ID, pendingId)
-                            .apply();
-                    update.setStatus(UpdateStatus.INSTALLING);
-                    mUpdaterController.notifyUpdateChange(pendingId);
-
-                    // Clear the pending flag inside the Handler so it persists if
-                    // the service is killed before the deferred install fires.
-                    new android.os.Handler(getMainLooper()).postDelayed(() -> {
-                        GSIUpdateInstaller.clearPendingGSIReboot(UpdaterService.this);
-                        // Clear the pre-set flag so install() can re-acquire it.
-                        PreferenceManager.getDefaultSharedPreferences(
-                                UpdaterService.this).edit()
-                                .remove(Constants.PREF_INSTALLING_GSI_ID).apply();
-                        Log.d(TAG, "Resuming deferred GSI install: " + pendingId);
-                        GSIUpdateInstaller installer =
-                                GSIUpdateInstaller.getInstance(
-                                        UpdaterService.this, mUpdaterController);
-                        installer.install(pendingId);
-                    }, 5000);
-                }
-            }
         } else if (ACTION_DOWNLOAD_CONTROL.equals(intent.getAction())) {
             String downloadId = intent.getStringExtra(EXTRA_DOWNLOAD_ID);
             int action = intent.getIntExtra(EXTRA_DOWNLOAD_CONTROL, -1);

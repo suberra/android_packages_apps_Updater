@@ -61,8 +61,6 @@ public final class Constants {
     public static final String PROP_BASEDOS_BUILD_TYPE = "ro.basedos.build_type";
 
     public static final String PREF_INSTALLING_GSI_ID = "installing_gsi_id";
-    public static final String PREF_PENDING_GSI_REBOOT = "pending_gsi_reboot";
-    public static final String PREF_GSI_AUTO_REBOOT_ON_COMPLETE = "gsi_auto_reboot_on_complete";
 
     public static final String HAS_SEEN_INFO_DIALOG = "has_seen_info_dialog";
     public static final String HAS_SEEN_WELCOME_MESSAGE = "has_seen_welcome_message";
